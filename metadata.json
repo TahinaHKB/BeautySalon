@@ -1,0 +1,6 @@
+{
+  "name": "Un Moment pour Soi - Institut de Beauté",
+  "description": "Plateforme de réservation en ligne, catalogue de soins et gestion des rendez-vous pour l'institut de beauté Un Moment pour Soi à Brétigny-sur-Orge.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

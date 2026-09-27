@@ -1,0 +1,187 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Customer profile for booking appointments at Un Moment pour Soi",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Unique identifier of the user matching Firebase Auth UID"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Email address of the customer"
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Full name of customer"
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 25,
+          "description": "Contact phone number"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Account registration timestamp"
+        }
+      },
+      "required": ["userId", "email"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "Appointment booking and payment record for a beauty treatment",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "User ID of the client who booked the appointment"
+        },
+        "customerName": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Client full name"
+        },
+        "customerEmail": {
+          "type": "string",
+          "format": "email",
+          "description": "Client email for confirmation"
+        },
+        "customerPhone": {
+          "type": "string",
+          "maxLength": 25,
+          "description": "Client phone number"
+        },
+        "serviceId": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Identifier of the selected beauty service"
+        },
+        "serviceTitle": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Title of the service"
+        },
+        "serviceCategory": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Category of the beauty service"
+        },
+        "durationMinutes": {
+          "type": "number",
+          "description": "Duration in minutes"
+        },
+        "price": {
+          "type": "number",
+          "description": "Price in Euros (€)"
+        },
+        "date": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "Appointment date (YYYY-MM-DD)"
+        },
+        "timeSlot": {
+          "type": "string",
+          "maxLength": 20,
+          "description": "Appointment time slot (e.g. 10:00)"
+        },
+        "practitioner": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "Selected aesthetician or therapist"
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Customer special notes or preferences"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["confirmed", "cancelled", "completed"],
+          "description": "Status of the appointment"
+        },
+        "cancellationReason": {
+          "type": "string",
+          "maxLength": 250,
+          "description": "Reason given if cancelled by customer"
+        },
+        "paymentStatus": {
+          "type": "string",
+          "enum": ["paid", "refunded", "pending"],
+          "description": "Payment status"
+        },
+        "paymentMethod": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Payment method used (simulated, stripe, in_salon)"
+        },
+        "paymentTransactionId": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Transaction reference"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Last update timestamp"
+        }
+      },
+      "required": ["userId", "customerName", "serviceId", "serviceTitle", "price", "date", "timeSlot", "status", "paymentStatus"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "Client review and testimonial for salon treatments",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the author"
+        },
+        "userName": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "Display name of reviewer"
+        },
+        "serviceTitle": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Service reviewed"
+        },
+        "rating": {
+          "type": "number",
+          "description": "Rating score between 1 and 5"
+        },
+        "comment": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Review text"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Review publication timestamp"
+        }
+      },
+      "required": ["userId", "userName", "rating", "comment"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Customer profiles, accessible only by the owner or admin"
+    },
+    "/bookings/{bookingId}": {
+      "schema": { "$ref": "#/entities/Booking" },
+      "description": "Bookings created and managed by customers"
+    },
+    "/reviews/{reviewId}": {
+      "schema": { "$ref": "#/entities/Review" },
+      "description": "Verified client testimonials and reviews"
+    }
+  }
+}
