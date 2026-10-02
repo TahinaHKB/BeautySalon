@@ -20,7 +20,12 @@ service cloud.firestore {
       return isSignedIn() && (
         request.auth.token.email == 'tahinaAndriantsoa2004@gmail.com' ||
         request.auth.token.email == 'tahinaandriantsoa2004@gmail.com' ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.admin == true ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true
+        ))
       );
     }
 
@@ -128,7 +133,8 @@ service cloud.firestore {
       );
       allow update: if isSignedIn() && (
         (request.auth.uid == userId && isValidUser(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'phone', 'email', 'emailVerified', 'updatedAt'])) ||
-        isSuperAdmin()
+        isSuperAdmin() ||
+        isAdmin()
       );
       allow delete: if isSuperAdmin();
     }

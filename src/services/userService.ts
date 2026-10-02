@@ -2,6 +2,7 @@ import {
   collection, 
   doc, 
   getDocs, 
+  setDoc,
   updateDoc, 
   onSnapshot, 
   query, 
@@ -180,19 +181,22 @@ export const UserService = {
       updatedAt: now
     };
 
-    if (auth.currentUser) {
-      try {
-        const userRef = doc(db, 'users', userId);
-        await updateDoc(userRef, payload);
-      } catch (err) {
-        handleFirestoreError(err, OperationType.UPDATE, `users/${userId}`);
-      }
+    try {
+      const userRef = doc(db, 'users', userId);
+      await setDoc(userRef, payload, { merge: true });
+    } catch (err) {
+      console.warn('Notice saving user role to Firestore:', err);
+      handleFirestoreError(err, OperationType.UPDATE, `users/${userId}`);
     }
 
-    // Update local cache
+    // Update local users cache
     const current = getLocalUsers();
     const updated: UserProfile[] = current.map(u => u.userId === userId ? { ...u, ...payload } : u);
     saveLocalUsers(updated);
+
+    // Update local practitioners cache
+    const practitioners = updated.filter(u => u.role === 'practitioner');
+    saveLocalPractitioners(practitioners);
   },
 
   /**

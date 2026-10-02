@@ -282,15 +282,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Delete Service
   const handleDeleteService = async (serviceId: string, title: string) => {
-    if (confirm(`Êtes-vous sûre de vouloir supprimer définitivement l'offre "${title}" ?`)) {
-      try {
-        await ServiceManager.deleteService(serviceId);
-        onServicesChanged();
-        setActionSuccessMsg(`L'offre "${title}" a été supprimée.`);
-        setTimeout(() => setActionSuccessMsg(null), 3000);
-      } catch (e: any) {
-        alert("Erreur de suppression : " + e.message);
-      }
+    try {
+      await ServiceManager.deleteService(serviceId);
+      onServicesChanged();
+      setActionSuccessMsg(`L'offre "${title}" a été supprimée avec succès.`);
+      setTimeout(() => setActionSuccessMsg(null), 3000);
+    } catch (e: any) {
+      console.warn("Erreur de suppression:", e);
+      setActionSuccessMsg("Erreur lors de la suppression de l'offre : " + e.message);
+      setTimeout(() => setActionSuccessMsg(null), 3500);
     }
   };
 
@@ -301,31 +301,46 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setActionSuccessMsg(`Statut du rendez-vous mis à jour (${newStatus}).`);
       setTimeout(() => setActionSuccessMsg(null), 3000);
     } catch (e: any) {
-      alert("Erreur mise à jour du rendez-vous : " + e.message);
+      setActionSuccessMsg("Erreur mise à jour du rendez-vous : " + e.message);
+      setTimeout(() => setActionSuccessMsg(null), 3500);
     }
   };
 
   // Promote / Demote User Role (Client, Practitioner, Admin)
   const handleSetUserRole = async (user: UserProfile, newRole: UserRole) => {
-    const roleLabels: Record<UserRole, string> = {
-      client: 'Cliente',
-      practitioner: 'Praticienne (accès planning & sélectionnable par les clientes)',
-      admin: 'Administratrice (accès complet)'
-    };
-    
-    if (!confirm(`Souhaitez-vous attribuer le rôle "${roleLabels[newRole]}" au compte "${user.displayName || user.email}" ?`)) {
-      return;
-    }
-
     setUpdatingUserId(user.userId);
+    
+    // Immediately update local state for instantaneous feedback
+    setAllUsers((prev) =>
+      prev.map((u) =>
+        u.userId === user.userId
+          ? {
+              ...u,
+              role: newRole,
+              admin: newRole === 'admin' || newRole === 'practitioner',
+              isAdmin: newRole === 'admin' || newRole === 'practitioner',
+              isPractitioner: newRole === 'practitioner'
+            }
+          : u
+      )
+    );
+
     try {
       await UserService.setUserRole(user.userId, newRole);
       setActionSuccessMsg(
-        `Le rôle de "${user.displayName || user.email}" a été défini sur : ${newRole === 'practitioner' ? 'Praticienne' : (newRole === 'admin' ? 'Administratrice' : 'Cliente')}.`
+        `Le compte "${user.displayName || user.email}" a été mis à jour avec le rôle : ${
+          newRole === 'practitioner'
+            ? 'Praticienne'
+            : newRole === 'admin'
+            ? 'Administratrice'
+            : 'Cliente'
+        }.`
       );
       setTimeout(() => setActionSuccessMsg(null), 3500);
     } catch (err: any) {
-      alert("Erreur lors de la modification du rôle : " + (err.message || 'Action refusée'));
+      console.warn("Erreur lors de la modification du rôle:", err);
+      setActionSuccessMsg("Erreur lors de la modification du rôle : " + (err.message || 'Action refusée'));
+      setTimeout(() => setActionSuccessMsg(null), 4000);
     } finally {
       setUpdatingUserId(null);
     }

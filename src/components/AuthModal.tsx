@@ -11,8 +11,7 @@ import {
   CheckCircle2, 
   RefreshCw, 
   Send, 
-  KeyRound, 
-  Award 
+  KeyRound 
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -38,7 +37,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     resendVerificationEmail, 
     reloadUserStatus, 
     sendPasswordReset, 
-    quickLoginAsPractitioner,
     loginWithGoogle 
   } = useAuth();
 
@@ -528,66 +526,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           </form>
         )}
-
-        {/* ================= QUICK PRACTITIONER / ADMIN LOGIN ================= */}
-        <div className="pt-2 border-t border-[#F0EAE1]">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-[#8C7A70] mb-2 text-center">
-            Accès Praticiennes & Équipe (Comptes Administrateurs)
-          </p>
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              type="button"
-              onClick={() => {
-                quickLoginAsPractitioner('emilie');
-                if (onSuccess) onSuccess();
-                onClose();
-              }}
-              className="py-1.5 px-2.5 rounded-lg bg-[#FAF7F2] border border-[#E8DFC8] text-[11px] font-medium text-[#2C2420] hover:bg-[#EFE9DF] text-left flex items-center gap-1.5 transition-colors"
-            >
-              <Award className="w-3.5 h-3.5 text-[#C8957C] shrink-0" />
-              <span className="truncate">Émilie (Gérante)</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                quickLoginAsPractitioner('chloe');
-                if (onSuccess) onSuccess();
-                onClose();
-              }}
-              className="py-1.5 px-2.5 rounded-lg bg-[#FAF7F2] border border-[#E8DFC8] text-[11px] font-medium text-[#2C2420] hover:bg-[#EFE9DF] text-left flex items-center gap-1.5 transition-colors"
-            >
-              <Award className="w-3.5 h-3.5 text-[#C8957C] shrink-0" />
-              <span className="truncate">Chloé (Massage)</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                quickLoginAsPractitioner('sarah');
-                if (onSuccess) onSuccess();
-                onClose();
-              }}
-              className="py-1.5 px-2.5 rounded-lg bg-[#FAF7F2] border border-[#E8DFC8] text-[11px] font-medium text-[#2C2420] hover:bg-[#EFE9DF] text-left flex items-center gap-1.5 transition-colors"
-            >
-              <Award className="w-3.5 h-3.5 text-[#C8957C] shrink-0" />
-              <span className="truncate">Sarah (Regard)</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                quickLoginAsPractitioner('tahina');
-                if (onSuccess) onSuccess();
-                onClose();
-              }}
-              className="py-1.5 px-2.5 rounded-lg bg-[#FAF7F2] border border-[#E8DFC8] text-[11px] font-medium text-[#2C2420] hover:bg-[#EFE9DF] text-left flex items-center gap-1.5 transition-colors"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              <span className="truncate">Admin Général</span>
-            </button>
-          </div>
-        </div>
 
       </div>
     </div>
