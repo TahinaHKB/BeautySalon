@@ -15,13 +15,11 @@ import { SALON_INFO } from '../data/salonData';
 interface FooterProps {
   onOpenBooking: () => void;
   onOpenGiftCard: () => void;
-  onOpenStripeConfig: () => void;
 }
 
 export const Footer: React.FC<FooterProps> = ({
   onOpenBooking,
-  onOpenGiftCard,
-  onOpenStripeConfig
+  onOpenGiftCard
 }) => {
   return (
     <footer className="bg-[#211B17] text-[#E8D8CE] border-t border-[#3D322D] pt-16 pb-12">
@@ -128,12 +126,6 @@ export const Footer: React.FC<FooterProps> = ({
                 className="w-full py-2.5 px-4 rounded-xl text-xs font-medium text-[#E8D8CE] bg-[#2E2520] hover:bg-[#3D322D] border border-[#4A3C33] transition-colors text-center cursor-pointer"
               >
                 Offrir une Carte Cadeau
-              </button>
-              <button
-                onClick={onOpenStripeConfig}
-                className="w-full py-1.5 px-3 text-[11px] text-[#A8988E] hover:text-white transition-colors text-center"
-              >
-                API Stripe & Intégration
               </button>
             </div>
           </div>

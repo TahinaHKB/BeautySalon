@@ -10,7 +10,6 @@ import { BookingModal } from './components/BookingModal';
 import { CustomerDashboard } from './components/CustomerDashboard';
 import { AuthModal } from './components/AuthModal';
 import { AdminDashboard } from './components/AdminDashboard';
-import { StripeSettingsModal } from './components/StripeSettingsModal';
 import { GiftCardModal } from './components/GiftCardModal';
 import { ReviewsSection } from './components/ReviewsSection';
 import { FaqSection } from './components/FaqSection';
@@ -50,7 +49,6 @@ function SalonAppContent() {
   const [serviceDetail, setServiceDetail] = useState<SalonService | null>(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
-  const [isStripeConfigOpen, setIsStripeConfigOpen] = useState(false);
   const [isGiftCardOpen, setIsGiftCardOpen] = useState(false);
 
   // Validate Firestore connection on boot
@@ -160,7 +158,6 @@ function SalonAppContent() {
         onOpenBooking={() => handleOpenBooking()}
         onOpenAuth={() => setIsAuthOpen(true)}
         onOpenDashboard={() => setIsDashboardOpen(true)}
-        onOpenStripeConfig={() => setIsStripeConfigOpen(true)}
         onOpenAdmin={() => setCurrentView('admin')}
         activeSection={activeSection}
         setActiveSection={setActiveSection}
@@ -208,7 +205,6 @@ function SalonAppContent() {
       <Footer
         onOpenBooking={() => handleOpenBooking()}
         onOpenGiftCard={() => setIsGiftCardOpen(true)}
-        onOpenStripeConfig={() => setIsStripeConfigOpen(true)}
       />
 
       {/* Modals */}
@@ -243,11 +239,6 @@ function SalonAppContent() {
       <AuthModal
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
-      />
-
-      <StripeSettingsModal
-        isOpen={isStripeConfigOpen}
-        onClose={() => setIsStripeConfigOpen(false)}
       />
 
       <GiftCardModal

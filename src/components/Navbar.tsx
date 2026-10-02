@@ -20,7 +20,6 @@ interface NavbarProps {
   onOpenBooking: () => void;
   onOpenAuth: () => void;
   onOpenDashboard: () => void;
-  onOpenStripeConfig: () => void;
   onOpenAdmin: () => void;
   activeSection: string;
   setActiveSection: (section: string) => void;
@@ -31,7 +30,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenBooking,
   onOpenAuth,
   onOpenDashboard,
-  onOpenStripeConfig,
   onOpenAdmin,
   activeSection,
   setActiveSection,
@@ -201,16 +199,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                     >
                       <Calendar className="w-3.5 h-3.5 text-[#C8957C]" />
                       Mes réservations & annulations
-                    </button>
-                    <button
-                      onClick={() => {
-                        setUserDropdownOpen(false);
-                        onOpenStripeConfig();
-                      }}
-                      className="w-full text-left px-4 py-2 text-xs text-[#2C2420] hover:bg-[#FAF7F2] flex items-center gap-2"
-                    >
-                      <CreditCard className="w-3.5 h-3.5 text-[#C8957C]" />
-                      Paramètres & Passerelle de paiement
                     </button>
                     <div className="border-t border-[#F0EAE1] my-1"></div>
                     <button

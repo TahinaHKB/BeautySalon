@@ -29,7 +29,12 @@ import {
   X,
   ExternalLink,
   LogOut,
-  RefreshCw
+  RefreshCw,
+  CalendarPlus,
+  UserPlus,
+  Tag,
+  FileText,
+  ChevronRight
 } from 'lucide-react';
 import { Booking, SalonService, ServiceCategory, UserProfile, UserRole } from '../types/salon';
 import { SALON_INFO } from '../data/salonData';
@@ -53,7 +58,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   const { userProfile, currentUser, logout, isSuperAdmin, isPractitioner, userRole } = useAuth();
   
-  const [activeTab, setActiveTab] = useState<'bookings' | 'services' | 'users' | 'team'>('bookings');
+  const [activeTab, setActiveTab] = useState<'bookings' | 'manual-booking' | 'services' | 'team' | 'users'>('bookings');
 
   // Protect the users tab: if practitioner tries to access, redirect to bookings
   useEffect(() => {
@@ -62,11 +67,44 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   }, [isSuperAdmin, activeTab]);
 
-  // Bookings list state
+  // Bookings list state & filters
   const [allBookings, setAllBookings] = useState<Booking[]>([]);
   const [practitionerFilter, setPractitionerFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [dateFilter, setDateFilter] = useState<string>(''); // YYYY-MM-DD or empty for all
+  const [serviceFilter, setServiceFilter] = useState<string>('all'); // Offer / service title
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Manual in-person booking state
+  const [manualClientMode, setManualClientMode] = useState<'existing' | 'new'>('existing');
+  const [selectedClientUser, setSelectedClientUser] = useState<UserProfile | null>(null);
+  const [manualClientSearch, setManualClientSearch] = useState<string>('');
+  const [manualClientName, setManualClientName] = useState<string>('');
+  const [manualClientPhone, setManualClientPhone] = useState<string>('');
+  const [manualClientEmail, setManualClientEmail] = useState<string>('');
+  const [manualSelectedServiceId, setManualSelectedServiceId] = useState<string>('');
+  const [manualPractitioner, setManualPractitioner] = useState<string>('');
+  const [manualDate, setManualDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [manualTimeSlot, setManualTimeSlot] = useState<string>('10:45');
+  const [manualNotes, setManualNotes] = useState<string>("Réservation sur place à l'accueil");
+  const [manualPaymentMethod, setManualPaymentMethod] = useState<string>("Règlement sur place (CB)");
+  const [manualSubmitting, setManualSubmitting] = useState<boolean>(false);
+  const [manualBookingResult, setManualBookingResult] = useState<Booking | null>(null);
+  const [manualBookingError, setManualBookingError] = useState<string | null>(null);
+
+  // Initialize default manual booking service and practitioner
+  useEffect(() => {
+    if (!manualSelectedServiceId && services.length > 0) {
+      setManualSelectedServiceId(services[0].id);
+    }
+  }, [services, manualSelectedServiceId]);
+
+  useEffect(() => {
+    if (!manualPractitioner && practitioners.length > 0) {
+      const defaultName = practitioners[0].displayName || practitioners[0].email.split('@')[0];
+      setManualPractitioner(defaultName);
+    }
+  }, [practitioners, manualPractitioner]);
 
   // Users list state (for promotion/demotion)
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
@@ -126,19 +164,54 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     };
   }, []);
 
+  // Helper to check if a practitioner has a conflicting booking
+  const isPractitionerBooked = (practitionerName: string, date: string, timeSlot: string): boolean => {
+    if (!practitionerName) return false;
+    const target = practitionerName.toLowerCase().trim();
+    return allBookings.some((b) => {
+      if (b.status === 'cancelled') return false;
+      if (b.date !== date || b.timeSlot !== timeSlot) return false;
+      const bPrat = (b.practitioner || '').toLowerCase().trim();
+      return bPrat === target || bPrat.includes(target) || target.includes(bPrat);
+    });
+  };
+
   // Filter bookings
   const filteredBookings = allBookings.filter((b) => {
     const matchesPractitioner = practitionerFilter === 'all' || 
       b.practitioner.toLowerCase().includes(practitionerFilter.toLowerCase());
     const matchesStatus = statusFilter === 'all' || b.status === statusFilter;
+    const matchesDate = !dateFilter || b.date === dateFilter;
+    const matchesService = serviceFilter === 'all' || 
+      b.serviceTitle.toLowerCase() === serviceFilter.toLowerCase() ||
+      b.serviceId === serviceFilter;
     const q = searchQuery.toLowerCase().trim();
     const matchesSearch = !q || 
       b.customerName.toLowerCase().includes(q) ||
       b.serviceTitle.toLowerCase().includes(q) ||
       b.customerPhone.includes(q) ||
       b.customerEmail.toLowerCase().includes(q);
-    return matchesPractitioner && matchesStatus && matchesSearch;
+    return matchesPractitioner && matchesStatus && matchesDate && matchesService && matchesSearch;
   });
+
+  // Summary of offers for dateFilter (or all active bookings if dateFilter is set)
+  const bookingsOnSelectedDate = dateFilter 
+    ? allBookings.filter(b => b.date === dateFilter && b.status !== 'cancelled')
+    : [];
+
+  const offersOnSelectedDateMap: Record<string, { count: number; category: string; revenue: number }> = {};
+  bookingsOnSelectedDate.forEach((b) => {
+    const t = b.serviceTitle || 'Prestation';
+    if (!offersOnSelectedDateMap[t]) {
+      offersOnSelectedDateMap[t] = { count: 0, category: b.serviceCategory || '', revenue: 0 };
+    }
+    offersOnSelectedDateMap[t].count += 1;
+    offersOnSelectedDateMap[t].revenue += (b.price || 0);
+  });
+  const offersOnSelectedDateList = Object.entries(offersOnSelectedDateMap).map(([title, data]) => ({
+    title,
+    ...data
+  })).sort((a, b) => b.count - a.count);
 
   // Filter users
   const filteredUsers = allUsers.filter((u) => {
@@ -346,6 +419,86 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  // Handle in-person manual booking creation
+  const handleCreateManualBooking = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setManualBookingError(null);
+    setManualBookingResult(null);
+
+    const effectiveName = manualClientMode === 'existing' && selectedClientUser 
+      ? (selectedClientUser.displayName || selectedClientUser.email.split('@')[0])
+      : manualClientName.trim();
+
+    const effectivePhone = manualClientMode === 'existing' && selectedClientUser
+      ? (selectedClientUser.phone || manualClientPhone.trim())
+      : manualClientPhone.trim();
+
+    const effectiveEmail = manualClientMode === 'existing' && selectedClientUser
+      ? selectedClientUser.email
+      : (manualClientEmail.trim() || 'accueil@unmomentpoursoi.fr');
+
+    if (!effectiveName || !effectivePhone) {
+      setManualBookingError("Veuillez renseigner le nom et le numéro de téléphone de la cliente.");
+      return;
+    }
+
+    const selectedService = services.find(s => s.id === manualSelectedServiceId) || services[0];
+    if (!selectedService) {
+      setManualBookingError("Veuillez sélectionner une prestation à réserver.");
+      return;
+    }
+
+    const manualDateObj = new Date(manualDate);
+    const isManualClosedDay = manualDateObj.getDay() === 0 || manualDateObj.getDay() === 1;
+    if (isManualClosedDay) {
+      setManualBookingError("L'institut est fermé les dimanches et lundis. Veuillez choisir une date entre mardi et samedi.");
+      return;
+    }
+
+    const effectivePractitioner = manualPractitioner || (practitioners[0]?.displayName || 'Praticienne de l\'institut');
+
+    if (isPractitionerBooked(effectivePractitioner, manualDate, manualTimeSlot)) {
+      setManualBookingError(`La praticienne ${effectivePractitioner} a déjà un rendez-vous le ${manualDate} à ${manualTimeSlot}. Veuillez choisir un autre horaire disponible.`);
+      return;
+    }
+
+    setManualSubmitting(true);
+    try {
+      const created = await BookingService.createBooking({
+        userId: selectedClientUser?.userId || 'walkin-' + Date.now(),
+        customerName: effectiveName,
+        customerEmail: effectiveEmail,
+        customerPhone: effectivePhone,
+        serviceId: selectedService.id,
+        serviceTitle: selectedService.title,
+        serviceCategory: selectedService.categoryName,
+        durationMinutes: selectedService.durationMinutes,
+        price: selectedService.price,
+        date: manualDate,
+        timeSlot: manualTimeSlot,
+        practitioner: effectivePractitioner,
+        notes: `${manualNotes.trim()} • Mode : ${manualPaymentMethod}`,
+        status: 'confirmed'
+      });
+
+      setManualBookingResult(created);
+      setActionSuccessMsg(`Rendez-vous présentiel enregistré pour ${effectiveName} le ${manualDate} à ${manualTimeSlot} !`);
+      setTimeout(() => setActionSuccessMsg(null), 4000);
+
+      // Reset client input fields if new
+      if (manualClientMode === 'new') {
+        setManualClientName('');
+        setManualClientPhone('');
+        setManualClientEmail('');
+      }
+    } catch (err: any) {
+      console.warn("Manual booking notice:", err);
+      setManualBookingError("Erreur lors de l'enregistrement : " + (err.message || 'Action impossible'));
+    } finally {
+      setManualSubmitting(false);
+    }
+  };
+
   const displayName = userProfile?.displayName || currentUser?.displayName || 'Gérante';
 
   return (
@@ -357,10 +510,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="flex items-center justify-between h-20">
             
             {/* Left: Brand & Admin Indicator */}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 sm:gap-4">
               <button
                 onClick={onBackToStorefront}
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[#FAF7F2] hover:bg-[#EFE9DF] text-xs font-semibold text-[#5A4D45] border border-[#DDD3C1] transition-all cursor-pointer shadow-2xs"
+                className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-2 rounded-xl bg-[#FAF7F2] hover:bg-[#EFE9DF] text-xs font-semibold text-[#5A4D45] border border-[#DDD3C1] transition-all cursor-pointer shadow-2xs"
                 title="Retourner à la boutique publique"
               >
                 <ArrowLeft className="w-4 h-4 text-[#9F674F]" />
@@ -371,15 +524,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="font-serif text-xl sm:text-2xl font-bold tracking-tight text-[#2C2420]">
+                  <span className="font-serif text-lg sm:text-2xl font-bold tracking-tight text-[#2C2420]">
                     Un Moment pour Soi
                   </span>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#9F674F] text-white uppercase tracking-wider">
-                    Espace Admin
+                    {isSuperAdmin ? 'Admin Général' : 'Espace Praticienne'}
                   </span>
                 </div>
                 <p className="text-[11px] text-[#8C7A70] hidden md:block">
-                  Direction de l'institut • Planning, Offres du site & Rôles
+                  Direction de l'institut • Planning, Prise de RDV sur place & Soins
                 </p>
               </div>
             </div>
@@ -388,7 +541,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="flex items-center gap-3">
               <div className="hidden lg:flex flex-col text-right">
                 <span className="text-xs font-bold text-[#2C2420]">{displayName}</span>
-                <span className="text-[11px] text-emerald-700 font-medium">Administratrice connectée</span>
+                <span className="text-[11px] text-emerald-700 font-medium">
+                  {isSuperAdmin ? 'Administratrice connectée' : 'Praticienne connectée'}
+                </span>
               </div>
 
               <div className="w-9 h-9 rounded-full bg-[#9F674F] text-white flex items-center justify-center font-bold text-xs shadow-xs ring-2 ring-[#C8957C]/20">
@@ -410,79 +565,125 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         </div>
 
-        {/* Navigation Tabs Bar */}
+        {/* Navigation Tabs Bar (Fully Responsive) */}
         <div className="bg-[#FAF7F2] border-t border-[#E5DDD0]">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <nav className="flex items-center gap-2 sm:gap-4 overflow-x-auto py-2.5 scrollbar-none">
-              
-              <button
-                onClick={() => setActiveTab('bookings')}
-                className={`py-2 px-3.5 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                  activeTab === 'bookings'
-                    ? 'bg-[#2C2420] text-white shadow-xs'
-                    : 'text-[#6E5B50] hover:bg-[#EFE9DF]'
-                }`}
-              >
-                <Calendar className="w-4 h-4 text-[#C8957C]" />
-                <span>Planning & Réservations</span>
-                {confirmedCount > 0 && (
-                  <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
-                    activeTab === 'bookings' ? 'bg-[#9F674F] text-white' : 'bg-[#E5DDD0] text-[#2C2420]'
-                  }`}>
-                    {confirmedCount}
-                  </span>
-                )}
-              </button>
-
-              <button
-                onClick={() => setActiveTab('services')}
-                className={`py-2 px-3.5 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                  activeTab === 'services'
-                    ? 'bg-[#2C2420] text-white shadow-xs'
-                    : 'text-[#6E5B50] hover:bg-[#EFE9DF]'
-                }`}
-              >
-                <Sparkles className="w-4 h-4 text-[#C8957C]" />
-                <span>Gestion des Soins & Offres</span>
-                <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
-                  activeTab === 'services' ? 'bg-[#9F674F] text-white' : 'bg-[#E5DDD0] text-[#2C2420]'
-                }`}>
-                  {services.length}
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2">
+            
+            {/* Mobile Dropdown Selector (visible on small screens) */}
+            <div className="md:hidden mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold text-[#8C7A70] uppercase tracking-wider shrink-0">
+                  Onglet :
                 </span>
-              </button>
+                <select
+                  value={activeTab}
+                  onChange={(e) => setActiveTab(e.target.value as any)}
+                  className="w-full py-2 px-3 rounded-xl bg-white border border-[#DDD3C1] text-xs font-bold text-[#2C2420] shadow-2xs focus:ring-2 focus:ring-[#C8957C]"
+                >
+                  <option value="bookings">📅 Planning & Réservations ({confirmedCount})</option>
+                  <option value="manual-booking">✍️ Prise de RDV en Présentiel (Nouveau)</option>
+                  <option value="services">✨ Gestion des Soins & Offres ({services.length})</option>
+                  <option value="team">👥 Équipe des Praticiennes ({practitioners.length})</option>
+                  {isSuperAdmin && (
+                    <option value="users">🛡️ Gestion des Comptes & Rôles ({allUsers.length})</option>
+                  )}
+                </select>
+              </div>
+            </div>
 
-              {isSuperAdmin && (
+            {/* Horizontal Scrollable Tabs (fluid on all screens) */}
+            <div className="relative">
+              <nav className="flex items-center gap-2 sm:gap-3 overflow-x-auto py-1 scrollbar-thin scrollbar-thumb-[#C8957C]/40 scrollbar-track-transparent touch-pan-x">
+                
                 <button
-                  onClick={() => setActiveTab('users')}
-                  className={`py-2 px-3.5 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'users'
+                  onClick={() => setActiveTab('bookings')}
+                  className={`py-2 px-3 sm:px-3.5 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 shrink-0 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'bookings'
                       ? 'bg-[#2C2420] text-white shadow-xs'
                       : 'text-[#6E5B50] hover:bg-[#EFE9DF]'
                   }`}
                 >
-                  <Users className="w-4 h-4 text-[#C8957C]" />
-                  <span>Gestion des Comptes & Rôles</span>
-                  <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
-                    activeTab === 'users' ? 'bg-[#9F674F] text-white' : 'bg-[#E5DDD0] text-[#2C2420]'
-                  }`}>
-                    {allUsers.length}
+                  <Calendar className="w-4 h-4 text-[#C8957C]" />
+                  <span>Planning & Réservations</span>
+                  {confirmedCount > 0 && (
+                    <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+                      activeTab === 'bookings' ? 'bg-[#9F674F] text-white' : 'bg-[#E5DDD0] text-[#2C2420]'
+                    }`}>
+                      {confirmedCount}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('manual-booking');
+                    setManualBookingResult(null);
+                    setManualBookingError(null);
+                  }}
+                  className={`py-2 px-3 sm:px-3.5 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 shrink-0 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'manual-booking'
+                      ? 'bg-[#9F674F] text-white shadow-xs'
+                      : 'text-[#6E5B50] hover:bg-[#EFE9DF]'
+                  }`}
+                >
+                  <CalendarPlus className="w-4 h-4 text-[#FDEBD0]" />
+                  <span>Prise de RDV Présentiel</span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800">
+                    Accueil
                   </span>
                 </button>
-              )}
 
-              <button
-                onClick={() => setActiveTab('team')}
-                className={`py-2 px-3.5 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                  activeTab === 'team'
-                    ? 'bg-[#2C2420] text-white shadow-xs'
-                    : 'text-[#6E5B50] hover:bg-[#EFE9DF]'
-                }`}
-              >
-                <Award className="w-4 h-4 text-[#C8957C]" />
-                <span>Équipe des Praticiennes</span>
-              </button>
+                <button
+                  onClick={() => setActiveTab('services')}
+                  className={`py-2 px-3 sm:px-3.5 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 shrink-0 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'services'
+                      ? 'bg-[#2C2420] text-white shadow-xs'
+                      : 'text-[#6E5B50] hover:bg-[#EFE9DF]'
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4 text-[#C8957C]" />
+                  <span>Gestion des Soins & Offres</span>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+                    activeTab === 'services' ? 'bg-[#9F674F] text-white' : 'bg-[#E5DDD0] text-[#2C2420]'
+                  }`}>
+                    {services.length}
+                  </span>
+                </button>
 
-            </nav>
+                <button
+                  onClick={() => setActiveTab('team')}
+                  className={`py-2 px-3 sm:px-3.5 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 shrink-0 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'team'
+                      ? 'bg-[#2C2420] text-white shadow-xs'
+                      : 'text-[#6E5B50] hover:bg-[#EFE9DF]'
+                  }`}
+                >
+                  <Award className="w-4 h-4 text-[#C8957C]" />
+                  <span>Équipe des Praticiennes</span>
+                </button>
+
+                {isSuperAdmin && (
+                  <button
+                    onClick={() => setActiveTab('users')}
+                    className={`py-2 px-3 sm:px-3.5 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 shrink-0 whitespace-nowrap cursor-pointer ${
+                      activeTab === 'users'
+                        ? 'bg-[#2C2420] text-white shadow-xs'
+                        : 'text-[#6E5B50] hover:bg-[#EFE9DF]'
+                    }`}
+                  >
+                    <Users className="w-4 h-4 text-[#C8957C]" />
+                    <span>Gestion des Comptes & Rôles</span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+                      activeTab === 'users' ? 'bg-[#9F674F] text-white' : 'bg-[#E5DDD0] text-[#2C2420]'
+                    }`}>
+                      {allUsers.length}
+                    </span>
+                  </button>
+                )}
+
+              </nav>
+            </div>
+
           </div>
         </div>
       </header>
@@ -600,8 +801,46 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 {/* Filters */}
-                <div className="flex flex-wrap items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
                   
+                  {/* Date Filter */}
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <span className="text-[#8C7A70] font-semibold hidden sm:inline">Date:</span>
+                    <input
+                      type="date"
+                      value={dateFilter}
+                      onChange={(e) => setDateFilter(e.target.value)}
+                      className="py-2 px-3 rounded-xl bg-[#FAF7F2] border border-[#DDD3C1] text-xs font-semibold text-[#2C2420] focus:ring-2 focus:ring-[#C8957C]"
+                      title="Filtrer par date de soin"
+                    />
+                    {dateFilter && (
+                      <button
+                        onClick={() => setDateFilter('')}
+                        className="p-1.5 rounded-lg text-[#8C7A70] hover:text-[#2C2420] hover:bg-[#EFE9DF]"
+                        title="Effacer le filtre date"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Prestation / Offre Selector */}
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <span className="text-[#8C7A70] font-semibold hidden sm:inline">Offre:</span>
+                    <select
+                      value={serviceFilter}
+                      onChange={(e) => setServiceFilter(e.target.value)}
+                      className="py-2 px-3 rounded-xl bg-[#FAF7F2] border border-[#DDD3C1] text-xs font-semibold text-[#2C2420] focus:ring-2 focus:ring-[#C8957C] max-w-[200px] truncate"
+                    >
+                      <option value="all">Toutes les offres</option>
+                      {services.map((s) => (
+                        <option key={s.id} value={s.title}>
+                          {s.title} ({s.price}€)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   {/* Practitioner selector */}
                   <div className="flex items-center gap-1.5 text-xs">
                     <span className="text-[#8C7A70] font-semibold hidden sm:inline">Praticienne:</span>
@@ -636,6 +875,111 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
               </div>
+
+              {/* Quick Date shortcuts */}
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#F0EAE1] text-xs">
+                <span className="text-[#8C7A70] font-medium text-[11px]">Raccourcis date :</span>
+                <button
+                  type="button"
+                  onClick={() => setDateFilter('')}
+                  className={`py-1 px-2.5 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer ${
+                    !dateFilter 
+                      ? 'bg-[#2C2420] text-white shadow-2xs' 
+                      : 'bg-[#FAF7F2] text-[#6E5B50] hover:bg-[#EFE9DF]'
+                  }`}
+                >
+                  Toutes les dates
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDateFilter(new Date().toISOString().split('T')[0])}
+                  className={`py-1 px-2.5 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer ${
+                    dateFilter === new Date().toISOString().split('T')[0]
+                      ? 'bg-[#9F674F] text-white shadow-2xs' 
+                      : 'bg-[#FAF7F2] text-[#6E5B50] hover:bg-[#EFE9DF]'
+                  }`}
+                >
+                  Aujourd'hui
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const d = new Date();
+                    d.setDate(d.getDate() + 1);
+                    setDateFilter(d.toISOString().split('T')[0]);
+                  }}
+                  className={`py-1 px-2.5 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer ${
+                    dateFilter === new Date(Date.now() + 86400000).toISOString().split('T')[0]
+                      ? 'bg-[#9F674F] text-white shadow-2xs' 
+                      : 'bg-[#FAF7F2] text-[#6E5B50] hover:bg-[#EFE9DF]'
+                  }`}
+                >
+                  Demain
+                </button>
+                {serviceFilter !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => setServiceFilter('all')}
+                    className="ml-auto text-[11px] text-[#9F674F] hover:underline font-semibold"
+                  >
+                    Réinitialiser le filtre d'offre ({serviceFilter})
+                  </button>
+                )}
+              </div>
+
+              {/* Offer Summary Panel for selected date */}
+              {dateFilter && (
+                <div className="bg-[#FAF3EC] p-3.5 sm:p-4 rounded-xl border border-[#E8DFC8] space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-[#2C2420] flex items-center gap-1.5">
+                      <Tag className="w-3.5 h-3.5 text-[#9F674F]" />
+                      Liste des offres réservées le {new Date(dateFilter + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} :
+                      <span className="bg-[#9F674F] text-white px-2 py-0.5 rounded-full text-[10px] font-bold">
+                        {bookingsOnSelectedDate.length} RDV
+                      </span>
+                    </span>
+                    {serviceFilter !== 'all' && (
+                      <button
+                        onClick={() => setServiceFilter('all')}
+                        className="text-[11px] text-[#9F674F] hover:underline font-semibold cursor-pointer"
+                      >
+                        Afficher toutes les offres de ce jour
+                      </button>
+                    )}
+                  </div>
+
+                  {offersOnSelectedDateList.length === 0 ? (
+                    <p className="text-xs text-[#8C7A70] italic">
+                      Aucune réservation confirmée pour cette date.
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      {offersOnSelectedDateList.map(off => (
+                        <button
+                          key={off.title}
+                          type="button"
+                          onClick={() => setServiceFilter(serviceFilter === off.title ? 'all' : off.title)}
+                          className={`py-1.5 px-3 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                            serviceFilter === off.title
+                              ? 'bg-[#2C2420] text-white shadow-xs ring-2 ring-[#9F674F]'
+                              : 'bg-white border border-[#DDD3C1] text-[#5A4D45] hover:border-[#9F674F]'
+                          }`}
+                          title={`Cliquer pour filtrer uniquement sur : ${off.title}`}
+                        >
+                          <span>{off.title}</span>
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                            serviceFilter === off.title ? 'bg-[#9F674F] text-white' : 'bg-[#EAE0D3] text-[#8C5D47]'
+                          }`}>
+                            {off.count}
+                          </span>
+                          <span className="text-[10px] opacity-75">({off.revenue}€)</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
             </div>
 
             {/* Bookings cards / list */}
@@ -748,12 +1092,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <span>Marquer Terminé</span>
                           </button>
                           <button
-                            onClick={() => {
-                              const reason = prompt("Précisez le motif d'annulation du rendez-vous :", "Annulation salon");
-                              if (reason !== null) {
-                                handleUpdateBookingStatus(booking.id, 'cancelled');
-                              }
-                            }}
+                            onClick={() => handleUpdateBookingStatus(booking.id, 'cancelled')}
                             className="py-2 px-3.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold transition-colors cursor-pointer"
                           >
                             Annuler RDV
@@ -775,6 +1114,478 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 ))}
               </div>
+            )}
+
+          </div>
+        )}
+
+        {/* ================= NEW TAB: MANUAL IN-PERSON BOOKING (PRÉSENTIEL / ACCUEIL) ================= */}
+        {activeTab === 'manual-booking' && (
+          <div className="space-y-6">
+            
+            {/* Header info */}
+            <div className="bg-white rounded-2xl p-5 border border-[#E8DFC8] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="font-serif text-xl font-bold text-[#2C2420] flex items-center gap-2">
+                  <CalendarPlus className="w-5 h-5 text-[#9F674F]" />
+                  <span>Prise de Rendez-vous en Présentiel & Accueil</span>
+                </h3>
+                <p className="text-xs text-[#6E5B50] mt-0.5">
+                  Enregistrez immédiatement un rendez-vous pour une cliente accueillie en salon ou au téléphone, avec vérification des disponibilités en temps réel.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('bookings')}
+                className="py-2 px-3.5 rounded-xl bg-[#FAF7F2] hover:bg-[#EFE9DF] text-xs font-bold text-[#5A4D45] border border-[#DDD3C1] transition-colors cursor-pointer flex items-center gap-1.5 self-start sm:self-auto shrink-0"
+              >
+                <Calendar className="w-3.5 h-3.5 text-[#9F674F]" />
+                <span>Voir le Planning</span>
+              </button>
+            </div>
+
+            {/* Success Card view if booking was just created */}
+            {manualBookingResult ? (
+              <div className="bg-white rounded-3xl p-8 border border-emerald-200 shadow-md max-w-xl mx-auto text-center space-y-5 animate-in fade-in zoom-in-95">
+                <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto shadow-inner">
+                  <CheckCircle2 className="w-9 h-9" />
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-xs uppercase tracking-wider text-emerald-700 font-bold">
+                    Réservation confirmée avec succès
+                  </span>
+                  <h4 className="font-serif text-2xl font-bold text-[#2C2420]">
+                    {manualBookingResult.customerName}
+                  </h4>
+                  <p className="text-xs text-[#6E5B50]">
+                    Rendez-vous enregistré dans Firestore et synchronisé avec le planning de l'institut.
+                  </p>
+                </div>
+
+                {/* Recap details */}
+                <div className="bg-[#FAF7F2] rounded-2xl p-4 border border-[#E8DFC8] text-xs text-left space-y-2 text-[#5A4D45]">
+                  <div className="flex justify-between items-center py-1 border-b border-[#F0EAE1]">
+                    <span className="text-[#8C7A70]">Soin réservé :</span>
+                    <strong className="text-[#2C2420]">{manualBookingResult.serviceTitle}</strong>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-[#F0EAE1]">
+                    <span className="text-[#8C7A70]">Praticienne assignée :</span>
+                    <strong className="text-[#9F674F]">{manualBookingResult.practitioner}</strong>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-[#F0EAE1]">
+                    <span className="text-[#8C7A70]">Date & Heure :</span>
+                    <strong className="text-[#2C2420]">{manualBookingResult.date} à {manualBookingResult.timeSlot}</strong>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-[#F0EAE1]">
+                    <span className="text-[#8C7A70]">Durée & Tarif :</span>
+                    <span>{manualBookingResult.durationMinutes} min • <strong>{manualBookingResult.price} €</strong></span>
+                  </div>
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-[#8C7A70]">Contact cliente :</span>
+                    <span>{manualBookingResult.customerPhone}</span>
+                  </div>
+                </div>
+
+                {/* Action buttons */}
+                <div className="flex flex-col sm:flex-row items-center gap-3 justify-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('bookings')}
+                    className="w-full sm:w-auto py-2.5 px-5 rounded-xl bg-[#2C2420] hover:bg-[#3D322D] text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <Calendar className="w-4 h-4 text-[#E2B7A0]" />
+                    <span>Consulter dans le Planning</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManualBookingResult(null);
+                      setManualBookingError(null);
+                    }}
+                    className="w-full sm:w-auto py-2.5 px-5 rounded-xl bg-[#FAF7F2] hover:bg-[#EFE9DF] text-[#5A4D45] text-xs font-semibold border border-[#DDD3C1] transition-all cursor-pointer"
+                  >
+                    Enregistrer un autre RDV
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Booking Form */
+              <form onSubmit={handleCreateManualBooking} className="bg-white rounded-3xl p-6 sm:p-8 border border-[#E8DFC8] shadow-xs space-y-8 max-w-4xl mx-auto">
+                
+                {manualBookingError && (
+                  <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-xs text-red-800 flex items-start gap-2.5 animate-in fade-in">
+                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="block font-bold">Action impossible :</strong>
+                      <span>{manualBookingError}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* ================= STEP 1: CLIENT SELECTION ================= */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between border-b border-[#F0EAE1] pb-2">
+                    <span className="text-xs font-bold text-[#8C7A70] uppercase tracking-wider flex items-center gap-2">
+                      <UserPlus className="w-4 h-4 text-[#9F674F]" />
+                      1. Identification de la Cliente
+                    </span>
+
+                    {/* Mode toggle */}
+                    <div className="inline-flex rounded-xl bg-[#FAF7F2] p-1 border border-[#DDD3C1]">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setManualClientMode('existing');
+                          setManualBookingError(null);
+                        }}
+                        className={`py-1 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          manualClientMode === 'existing'
+                            ? 'bg-[#2C2420] text-white shadow-2xs'
+                            : 'text-[#6E5B50] hover:text-[#2C2420]'
+                        }`}
+                      >
+                        Cliente inscrite ({allUsers.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setManualClientMode('new');
+                          setSelectedClientUser(null);
+                          setManualBookingError(null);
+                        }}
+                        className={`py-1 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          manualClientMode === 'new'
+                            ? 'bg-[#2C2420] text-white shadow-2xs'
+                            : 'text-[#6E5B50] hover:text-[#2C2420]'
+                        }`}
+                      >
+                        Nouvelle cliente (Sur place)
+                      </button>
+                    </div>
+                  </div>
+
+                  {manualClientMode === 'existing' ? (
+                    <div className="space-y-3">
+                      {/* Search among existing registered users */}
+                      <div className="relative">
+                        <Search className="w-4 h-4 text-[#8C7A70] absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={manualClientSearch}
+                          onChange={(e) => setManualClientSearch(e.target.value)}
+                          placeholder="Rechercher cliente par nom, e-mail ou téléphone..."
+                          className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-[#FAF7F2] border border-[#DDD3C1] text-xs text-[#2C2420] focus:ring-2 focus:ring-[#C8957C]"
+                        />
+                      </div>
+
+                      {/* Selected user card or user list */}
+                      {selectedClientUser ? (
+                        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-emerald-700 text-white font-bold flex items-center justify-center text-xs">
+                              {selectedClientUser.displayName ? selectedClientUser.displayName.charAt(0).toUpperCase() : 'C'}
+                            </div>
+                            <div>
+                              <strong className="text-xs text-emerald-950 block font-bold">
+                                {selectedClientUser.displayName || 'Client'} ({selectedClientUser.email})
+                              </strong>
+                              <span className="text-[11px] text-emerald-800">
+                                Tél : {selectedClientUser.phone || 'Non renseigné'}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedClientUser(null)}
+                            className="py-1 px-2.5 rounded-lg text-xs bg-white text-emerald-800 border border-emerald-300 hover:bg-emerald-100 font-semibold cursor-pointer"
+                          >
+                            Changer de cliente
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="max-h-48 overflow-y-auto divide-y divide-[#F0EAE1] border border-[#E8DFC8] rounded-xl bg-white scrollbar-thin">
+                          {allUsers
+                            .filter(u => {
+                              const q = manualClientSearch.toLowerCase().trim();
+                              if (!q) return true;
+                              return (
+                                (u.displayName && u.displayName.toLowerCase().includes(q)) ||
+                                (u.email && u.email.toLowerCase().includes(q)) ||
+                                (u.phone && u.phone.includes(q))
+                              );
+                            })
+                            .slice(0, 8)
+                            .map(u => (
+                              <div
+                                key={u.userId}
+                                onClick={() => {
+                                  setSelectedClientUser(u);
+                                  setManualClientName(u.displayName || u.email.split('@')[0]);
+                                  setManualClientPhone(u.phone || '');
+                                  setManualClientEmail(u.email);
+                                }}
+                                className="p-3 flex items-center justify-between hover:bg-[#FAF7F2] transition-colors cursor-pointer"
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <div className="w-7 h-7 rounded-full bg-[#EAE0D3] text-[#8C5D47] font-bold text-xs flex items-center justify-center">
+                                    {u.displayName ? u.displayName.charAt(0).toUpperCase() : 'C'}
+                                  </div>
+                                  <div>
+                                    <span className="text-xs font-bold text-[#2C2420] block">
+                                      {u.displayName || 'Client'}
+                                    </span>
+                                    <span className="text-[10px] text-[#8C7A70]">
+                                      {u.email} {u.phone && `• ${u.phone}`}
+                                    </span>
+                                  </div>
+                                </div>
+                                <span className="text-[11px] text-[#9F674F] font-semibold hover:underline">
+                                  Sélectionner →
+                                </span>
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* New client inputs */
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-[#5A4D45] mb-1">
+                          Nom & Prénom de la cliente *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={manualClientName}
+                          onChange={(e) => setManualClientName(e.target.value)}
+                          placeholder="Mme Dupont"
+                          className="w-full p-2.5 rounded-xl bg-[#FAF7F2] border border-[#DDD3C1] text-xs text-[#2C2420] focus:ring-2 focus:ring-[#C8957C]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-[#5A4D45] mb-1">
+                          Téléphone portable * (Rappels)
+                        </label>
+                        <input
+                          type="tel"
+                          required
+                          value={manualClientPhone}
+                          onChange={(e) => setManualClientPhone(e.target.value)}
+                          placeholder="06 12 34 56 78"
+                          className="w-full p-2.5 rounded-xl bg-[#FAF7F2] border border-[#DDD3C1] text-xs text-[#2C2420] focus:ring-2 focus:ring-[#C8957C]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-[#5A4D45] mb-1">
+                          Adresse e-mail (facultative)
+                        </label>
+                        <input
+                          type="email"
+                          value={manualClientEmail}
+                          onChange={(e) => setManualClientEmail(e.target.value)}
+                          placeholder="cliente@exemple.fr"
+                          className="w-full p-2.5 rounded-xl bg-[#FAF7F2] border border-[#DDD3C1] text-xs text-[#2C2420] focus:ring-2 focus:ring-[#C8957C]"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* ================= STEP 2: SERVICE & TREATMENT SELECTION ================= */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between border-b border-[#F0EAE1] pb-2">
+                    <span className="text-xs font-bold text-[#8C7A70] uppercase tracking-wider flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-[#9F674F]" />
+                      2. Choix de la Prestation
+                    </span>
+                    <span className="text-[11px] text-[#8C7A70]">
+                      {services.length} prestations actives
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {services.map((svc) => {
+                      const isSelected = manualSelectedServiceId === svc.id;
+                      return (
+                        <div
+                          key={svc.id}
+                          onClick={() => setManualSelectedServiceId(svc.id)}
+                          className={`p-3.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
+                            isSelected
+                              ? 'border-[#9F674F] bg-[#FAF7F2] ring-2 ring-[#9F674F]'
+                              : 'border-[#E8DFC8] bg-white hover:bg-[#FAF7F2]'
+                          }`}
+                        >
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-[#9F674F] block">
+                              {svc.categoryName}
+                            </span>
+                            <strong className="text-xs font-bold text-[#2C2420] block mt-0.5">
+                              {svc.title}
+                            </strong>
+                            <p className="text-[10px] text-[#6E5B50] line-clamp-1 mt-0.5">
+                              {svc.subtitle || svc.description}
+                            </p>
+                          </div>
+                          <div className="pt-2 mt-2 border-t border-[#F0EAE1] flex items-center justify-between text-xs">
+                            <span className="text-[#8C7A70] flex items-center gap-1 text-[11px]">
+                              <Clock className="w-3 h-3 text-[#C8957C]" />
+                              {svc.durationMinutes} min
+                            </span>
+                            <span className="font-bold text-[#2C2420]">
+                              {svc.price} €
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* ================= STEP 3: PRACTITIONER & DATE/TIME ================= */}
+                <div className="space-y-4">
+                  <div className="border-b border-[#F0EAE1] pb-2">
+                    <span className="text-xs font-bold text-[#8C7A70] uppercase tracking-wider flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-[#9F674F]" />
+                      3. Praticienne, Date & Créneau Horaire
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Practitioner Selector */}
+                    <div>
+                      <label className="block text-xs font-semibold text-[#5A4D45] mb-1">
+                        Praticienne assignée :
+                      </label>
+                      <select
+                        value={manualPractitioner}
+                        onChange={(e) => setManualPractitioner(e.target.value)}
+                        className="w-full p-2.5 rounded-xl bg-[#FAF7F2] border border-[#DDD3C1] text-xs font-semibold text-[#2C2420] focus:ring-2 focus:ring-[#C8957C]"
+                      >
+                        {practitioners.length === 0 ? (
+                          <option value="Praticienne">Praticienne par défaut</option>
+                        ) : (
+                          practitioners.map((p) => {
+                            const name = p.displayName || p.email.split('@')[0];
+                            return <option key={p.userId} value={name}>{name}</option>;
+                          })
+                        )}
+                      </select>
+                    </div>
+
+                    {/* Date Picker */}
+                    <div>
+                      <label className="block text-xs font-semibold text-[#5A4D45] mb-1">
+                        Date du soin :
+                      </label>
+                      <input
+                        type="date"
+                        min={new Date().toISOString().split('T')[0]}
+                        value={manualDate}
+                        onChange={(e) => setManualDate(e.target.value)}
+                        className="w-full p-2.5 rounded-xl bg-[#FAF7F2] border border-[#DDD3C1] text-xs text-[#2C2420] focus:ring-2 focus:ring-[#C8957C]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Time slots for that date & practitioner */}
+                  <div>
+                    <label className="block text-xs font-semibold text-[#5A4D45] mb-2">
+                      Créneaux disponibles pour {manualPractitioner || 'la praticienne'} :
+                    </label>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                      {['09:30', '10:45', '11:30', '14:00', '15:15', '16:30', '17:45', '18:30'].map((slot) => {
+                        const isBooked = isPractitionerBooked(manualPractitioner, manualDate, slot);
+                        const isSelected = manualTimeSlot === slot;
+
+                        return (
+                          <button
+                            key={slot}
+                            type="button"
+                            disabled={isBooked}
+                            onClick={() => !isBooked && setManualTimeSlot(slot)}
+                            className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all relative ${
+                              isBooked
+                                ? 'bg-gray-100 border border-gray-200 text-gray-400 cursor-not-allowed line-through opacity-60'
+                                : isSelected
+                                ? 'bg-[#2C2420] text-white shadow-sm ring-2 ring-[#9F674F]'
+                                : 'bg-white border border-[#E0D5C3] text-[#5A4D45] hover:bg-[#FAF7F2] cursor-pointer'
+                            }`}
+                          >
+                            <span>{slot}</span>
+                            {isBooked && (
+                              <span className="block text-[8px] font-normal text-red-500 no-underline tracking-tighter">
+                                Occupé
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ================= STEP 4: PAYMENT ON-SITE & NOTES ================= */}
+                <div className="space-y-4">
+                  <div className="border-b border-[#F0EAE1] pb-2">
+                    <span className="text-xs font-bold text-[#8C7A70] uppercase tracking-wider flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-[#9F674F]" />
+                      4. Modalité de Règlement & Notes
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#5A4D45] mb-1">
+                        Mode de paiement sur place :
+                      </label>
+                      <select
+                        value={manualPaymentMethod}
+                        onChange={(e) => setManualPaymentMethod(e.target.value)}
+                        className="w-full p-2.5 rounded-xl bg-[#FAF7F2] border border-[#DDD3C1] text-xs font-semibold text-[#2C2420] focus:ring-2 focus:ring-[#C8957C]"
+                      >
+                        <option value="Règlement sur place (CB)">Règlement sur place (Carte Bancaire)</option>
+                        <option value="Règlement sur place (Espèces)">Règlement sur place (Espèces)</option>
+                        <option value="Bon / Chèque Cadeau">Bon / Carte Cadeau</option>
+                        <option value="Déjà réglé / Abonnement">Déjà réglé / Forfait</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-[#5A4D45] mb-1">
+                        Remarques ou précisions (optionnel) :
+                      </label>
+                      <input
+                        type="text"
+                        value={manualNotes}
+                        onChange={(e) => setManualNotes(e.target.value)}
+                        placeholder="Ex: Cliente fidèle, demande cabine calme..."
+                        className="w-full p-2.5 rounded-xl bg-[#FAF7F2] border border-[#DDD3C1] text-xs text-[#2C2420] focus:ring-2 focus:ring-[#C8957C]"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Submit button */}
+                <div className="pt-4 border-t border-[#F0EAE1] flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <p className="text-xs text-[#8C7A70]">
+                    * Le rendez-vous sera immédiatement confirmé et bloquera ce créneau pour {manualPractitioner || 'la praticienne'}.
+                  </p>
+
+                  <button
+                    type="submit"
+                    disabled={manualSubmitting || isPractitionerBooked(manualPractitioner, manualDate, manualTimeSlot)}
+                    className="w-full sm:w-auto py-3 px-8 rounded-xl bg-gradient-to-r from-[#B98166] to-[#9F674F] hover:from-[#A87258] hover:to-[#8E5A43] text-white text-xs sm:text-sm font-bold shadow-md hover:shadow-lg transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    <CalendarPlus className="w-4 h-4" />
+                    <span>{manualSubmitting ? "Enregistrement en cours..." : "Valider le Rendez-vous en Présentiel"}</span>
+                  </button>
+                </div>
+
+              </form>
             )}
 
           </div>
