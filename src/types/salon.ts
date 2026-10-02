@@ -21,6 +21,9 @@ export interface SalonService {
   recommendedFor: string;
   badge?: string;
   image: string;
+  active?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Practitioner {
@@ -31,6 +34,7 @@ export interface Practitioner {
   specialties: string[];
   avatar: string;
   bio: string;
+  email?: string;
 }
 
 export interface Booking {
@@ -50,9 +54,9 @@ export interface Booking {
   notes?: string;
   status: 'confirmed' | 'cancelled' | 'completed';
   cancellationReason?: string;
-  paymentStatus: 'paid' | 'refunded' | 'pending';
-  paymentMethod: string;
-  paymentTransactionId: string;
+  paymentStatus?: 'paid' | 'refunded' | 'pending' | 'on_site';
+  paymentMethod?: string;
+  paymentTransactionId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -88,4 +92,24 @@ export interface SalonInfo {
     note?: string;
   }[];
   amenities: string[];
+}
+
+export type UserRole = 'client' | 'practitioner' | 'admin';
+
+export interface UserProfile {
+  userId: string;
+  email: string;
+  displayName: string;
+  photoURL?: string;
+  phone?: string;
+  role?: UserRole;
+  admin?: boolean;
+  isAdmin?: boolean;
+  isPractitioner?: boolean;
+  specialties?: string[];
+  bio?: string;
+  experience?: string;
+  emailVerified?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }

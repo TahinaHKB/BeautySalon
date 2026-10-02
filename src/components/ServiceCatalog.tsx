@@ -7,19 +7,23 @@ import {
   ArrowRight, 
   Check, 
   Calendar,
-  Info
+  Info,
+  Loader2
 } from 'lucide-react';
-import { SALON_SERVICES } from '../data/salonData';
 import { SalonService, ServiceCategory } from '../types/salon';
 
 interface ServiceCatalogProps {
   onSelectService: (service: SalonService) => void;
   onViewServiceDetails: (service: SalonService) => void;
+  services?: SalonService[];
+  isLoading?: boolean;
 }
 
 export const ServiceCatalog: React.FC<ServiceCatalogProps> = ({
   onSelectService,
-  onViewServiceDetails
+  onViewServiceDetails,
+  services = [],
+  isLoading = false
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -35,8 +39,10 @@ export const ServiceCatalog: React.FC<ServiceCatalogProps> = ({
     { id: 'rituels', label: 'Rituels Signature' },
   ];
 
+  const sourceServices = services || [];
+
   const filteredServices = useMemo(() => {
-    return SALON_SERVICES.filter((svc) => {
+    return sourceServices.filter((svc) => {
       const matchesCategory = selectedCategory === 'all' || svc.category === selectedCategory;
       const q = searchQuery.toLowerCase().trim();
       const matchesQuery = !q || 
@@ -51,7 +57,7 @@ export const ServiceCatalog: React.FC<ServiceCatalogProps> = ({
       if (sortBy === 'duration') return a.durationMinutes - b.durationMinutes;
       return 0; // default order
     });
-  }, [selectedCategory, searchQuery, sortBy]);
+  }, [sourceServices, selectedCategory, searchQuery, sortBy]);
 
   return (
     <section id="services" className="py-16 sm:py-24 bg-[#FAF7F2]">
@@ -131,13 +137,34 @@ export const ServiceCatalog: React.FC<ServiceCatalogProps> = ({
 
         </div>
 
-        {/* Services Grid */}
-        {filteredServices.length === 0 ? (
-          <div className="text-center py-16 bg-white rounded-2xl border border-[#E8DFC8] p-8">
-            <p className="text-base text-[#5A4D45]">Aucune prestation ne correspond à votre recherche "{searchQuery}".</p>
+        {/* Services Loading State */}
+        {isLoading ? (
+          <div className="text-center py-20 bg-white rounded-3xl border border-[#E8DFC8] p-8 max-w-md mx-auto shadow-xs">
+            <Loader2 className="w-8 h-8 text-[#9F674F] animate-spin mx-auto mb-3" />
+            <h3 className="font-serif text-lg font-medium text-[#2C2420]">Chargement des soins...</h3>
+            <p className="text-xs text-[#8C7A70] mt-1">Récupération des offres en direct de notre institut.</p>
+          </div>
+        ) : sourceServices.length === 0 ? (
+          /* Empty Firestore Collection State */
+          <div className="text-center py-16 bg-white rounded-3xl border border-[#E8DFC8] p-8 max-w-lg mx-auto shadow-xs">
+            <div className="w-14 h-14 rounded-full bg-[#FAF3EC] border border-[#E8DFC8] flex items-center justify-center mx-auto mb-4 text-[#9F674F]">
+              <Sparkles className="w-7 h-7" />
+            </div>
+            <h3 className="font-serif text-xl font-medium text-[#2C2420] mb-2">
+              Prestations en ligne
+            </h3>
+            <p className="text-xs sm:text-sm text-[#6E5B50] leading-relaxed">
+              Nos soins et rituels sont gérés en direct depuis notre espace d'administration. 
+              Pour toute demande spécifique ou réservation personnalisée, contactez notre équipe.
+            </p>
+          </div>
+        ) : filteredServices.length === 0 ? (
+          /* Filter Mismatch State */
+          <div className="text-center py-16 bg-white rounded-2xl border border-[#E8DFC8] p-8 max-w-md mx-auto">
+            <p className="text-sm text-[#5A4D45]">Aucune prestation ne correspond à vos critères de recherche.</p>
             <button
               onClick={() => { setSearchQuery(''); setSelectedCategory('all'); }}
-              className="mt-4 px-4 py-2 rounded-xl bg-[#2C2420] text-white text-xs font-semibold"
+              className="mt-4 px-4 py-2 rounded-xl bg-[#2C2420] hover:bg-[#3D322D] text-white text-xs font-semibold cursor-pointer transition-colors"
             >
               Réinitialiser les filtres
             </button>

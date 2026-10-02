@@ -10,7 +10,8 @@ import {
   X, 
   CreditCard,
   Heart,
-  ChevronDown
+  ChevronDown,
+  ShieldCheck
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { SALON_INFO } from '../data/salonData';
@@ -20,6 +21,7 @@ interface NavbarProps {
   onOpenAuth: () => void;
   onOpenDashboard: () => void;
   onOpenStripeConfig: () => void;
+  onOpenAdmin: () => void;
   activeSection: string;
   setActiveSection: (section: string) => void;
   bookingsCount: number;
@@ -30,6 +32,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAuth,
   onOpenDashboard,
   onOpenStripeConfig,
+  onOpenAdmin,
   activeSection,
   setActiveSection,
   bookingsCount
@@ -109,16 +112,17 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Action buttons (Right) */}
           <div className="flex items-center gap-3">
-            {/* Stripe live status badge / info button */}
-            <button
-              onClick={onOpenStripeConfig}
-              title="Configuration Paiements & Stripe"
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-[#EFE9DF] text-[#6E5B50] hover:bg-[#E5DDCF] border border-[#DDD3C1] transition-colors"
-            >
-              <CreditCard className="w-3.5 h-3.5 text-[#C8957C]" />
-              <span className="hidden xl:inline">Paiement :</span>
-              <span className="font-semibold text-[#2C2420]">Mode Simulé</span>
-            </button>
+            {/* Admin Dashboard shortcut (if admin) */}
+            {isAdmin && (
+              <button
+                onClick={onOpenAdmin}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm font-semibold rounded-lg bg-[#9F674F] hover:bg-[#88543E] text-white shadow-xs transition-colors cursor-pointer"
+                title="Gérer les offres du salon et les rendez-vous"
+              >
+                <ShieldCheck className="w-4 h-4 text-[#FDEBD0]" />
+                <span className="hidden sm:inline">Administration</span>
+              </button>
+            )}
 
             {/* My Bookings link (if logged in) */}
             {isLoggedIn && (
@@ -162,7 +166,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                 {userDropdownOpen && (
                   <div 
-                    className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-[#E8DFC8] py-2 z-50 animate-in fade-in zoom-in-95 duration-100"
+                    className="absolute right-0 mt-2 w-60 bg-white rounded-xl shadow-lg border border-[#E8DFC8] py-2 z-50 animate-in fade-in zoom-in-95 duration-100"
                     onMouseLeave={() => setUserDropdownOpen(false)}
                   >
                     <div className="px-4 py-2 border-b border-[#F0EAE1]">
@@ -174,6 +178,20 @@ export const Navbar: React.FC<NavbarProps> = ({
                         </span>
                       )}
                     </div>
+
+                    {isAdmin && (
+                      <button
+                        onClick={() => {
+                          setUserDropdownOpen(false);
+                          onOpenAdmin();
+                        }}
+                        className="w-full text-left px-4 py-2.5 text-xs font-semibold text-[#9F674F] bg-[#FAF5F0] hover:bg-[#F3ECE2] flex items-center gap-2 border-b border-[#F0EAE1]"
+                      >
+                        <ShieldCheck className="w-4 h-4 text-[#9F674F]" />
+                        Panneau Admin : Offres & Planning
+                      </button>
+                    )}
+
                     <button
                       onClick={() => {
                         setUserDropdownOpen(false);
@@ -192,7 +210,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       className="w-full text-left px-4 py-2 text-xs text-[#2C2420] hover:bg-[#FAF7F2] flex items-center gap-2"
                     >
                       <CreditCard className="w-3.5 h-3.5 text-[#C8957C]" />
-                      Options de paiement & Stripe
+                      Paramètres & Passerelle de paiement
                     </button>
                     <div className="border-t border-[#F0EAE1] my-1"></div>
                     <button
@@ -260,6 +278,22 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           <div className="pt-3 border-t border-[#E8DFC8]/60 flex flex-col gap-2">
+            {isAdmin && (
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onOpenAdmin();
+                }}
+                className="w-full flex items-center justify-between py-2.5 px-3 rounded-lg bg-[#9F674F] text-white text-sm font-semibold"
+              >
+                <span className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-[#FDEBD0]" />
+                  Administration (Offres & Planning)
+                </span>
+                <span className="text-xs bg-white/20 px-2 py-0.5 rounded text-white">Gérer</span>
+              </button>
+            )}
+
             {isLoggedIn ? (
               <>
                 <button

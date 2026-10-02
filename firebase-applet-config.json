@@ -1,12 +1,9 @@
 {
-  "projectId": "fluted-league-3lxdt",
-  "appId": "1:10365258263:web:5a83308f27b78fc1cf2a52",
-  "apiKey": "AIzaSyAofj0HvsxrV4r_aTbnbYBbTize7DdpaVE",
-  "authDomain": "fluted-league-3lxdt.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-3b69c8e0-2691-48ae-8953-7491d1d8f83b",
-  "storageBucket": "fluted-league-3lxdt.firebasestorage.app",
-  "messagingSenderId": "10365258263",
-  "measurementId": "",
-  "oAuthClientId": "10365258263-jmm3mskf7rm5t8k1qdcvuglc11ao1svv.apps.googleusercontent.com",
-  "recaptchaSiteKey": ""
+  "apiKey": "AIzaSyCMvkbmW_rtNVkEWCPj2dnFgGpWyjZFYxM",
+  "authDomain": "reservationspa-2b56c.firebaseapp.com",
+  "projectId": "reservationspa-2b56c",
+  "storageBucket": "reservationspa-2b56c.firebasestorage.app",
+  "messagingSenderId": "320343391859",
+  "appId": "1:320343391859:web:483058be971a1aa8f6f406",
+  "measurementId": "G-YRKERK70W4"
 }

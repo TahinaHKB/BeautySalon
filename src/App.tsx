@@ -9,20 +9,35 @@ import { PractitionersSection } from './components/PractitionersSection';
 import { BookingModal } from './components/BookingModal';
 import { CustomerDashboard } from './components/CustomerDashboard';
 import { AuthModal } from './components/AuthModal';
+import { AdminDashboard } from './components/AdminDashboard';
 import { StripeSettingsModal } from './components/StripeSettingsModal';
 import { GiftCardModal } from './components/GiftCardModal';
 import { ReviewsSection } from './components/ReviewsSection';
 import { FaqSection } from './components/FaqSection';
 import { Footer } from './components/Footer';
 import { testConnection } from './firebase/config';
-import { Booking, SalonService } from './types/salon';
+import { Booking, SalonService, UserProfile } from './types/salon';
 import { BookingService } from './services/bookingService';
+import { ServiceManager } from './services/serviceManager';
+import { UserService } from './services/userService';
 
 function SalonAppContent() {
-  const { currentUser, userProfile } = useAuth();
+  const { currentUser, userProfile, isAdmin } = useAuth();
   
+  // Page routing: 'storefront' (public website) or 'admin' (full-page dedicated admin dashboard)
+  const [currentView, setCurrentView] = useState<'storefront' | 'admin'>('storefront');
+
   // Navigation & section tracking
   const [activeSection, setActiveSection] = useState('home');
+
+  // Dynamic services (from Firestore exclusively)
+  const [services, setServices] = useState<SalonService[]>([]);
+  const [allAdminServices, setAllAdminServices] = useState<SalonService[]>([]);
+  const [isServicesLoading, setIsServicesLoading] = useState<boolean>(true);
+
+  // Dynamic practitioners (from promoted accounts in Firestore)
+  const [practitioners, setPractitioners] = useState<UserProfile[]>([]);
+  const [isPractitionersLoading, setIsPractitionersLoading] = useState<boolean>(true);
 
   // Bookings list for active client
   const [userBookings, setUserBookings] = useState<Booking[]>([]);
@@ -38,9 +53,50 @@ function SalonAppContent() {
   const [isStripeConfigOpen, setIsStripeConfigOpen] = useState(false);
   const [isGiftCardOpen, setIsGiftCardOpen] = useState(false);
 
-  // Validate Firestore connection on boot as mandated
+  // Validate Firestore connection on boot
   useEffect(() => {
     testConnection();
+  }, []);
+
+  // Listen to hash changes for deep linking to admin (#admin)
+  useEffect(() => {
+    const handleHash = () => {
+      if (window.location.hash === '#admin') {
+        setCurrentView('admin');
+      }
+    };
+    handleHash();
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
+
+  // Subscribe to services from Firestore
+  useEffect(() => {
+    const unsubActive = ServiceManager.subscribeServices((activeList) => {
+      setServices(activeList || []);
+      setIsServicesLoading(false);
+    }, false);
+
+    const unsubAll = ServiceManager.subscribeServices((allList) => {
+      setAllAdminServices(allList || []);
+    }, true);
+
+    return () => {
+      if (unsubActive) unsubActive();
+      if (unsubAll) unsubAll();
+    };
+  }, []);
+
+  // Subscribe to promoted practitioners from Firestore
+  useEffect(() => {
+    const unsubPractitioners = UserService.subscribePractitioners((list) => {
+      setPractitioners(list || []);
+      setIsPractitionersLoading(false);
+    });
+
+    return () => {
+      if (unsubPractitioners) unsubPractitioners();
+    };
   }, []);
 
   // Listen to bookings when user changes
@@ -57,7 +113,7 @@ function SalonAppContent() {
         setUserBookings(bookings);
       },
       (error) => {
-        console.warn('Booking subscription warning:', error);
+        console.warn('Booking subscription notice:', error);
       }
     );
 
@@ -73,11 +129,29 @@ function SalonAppContent() {
   };
 
   const handleBookingSuccess = () => {
-    // Re-fetch bookings automatically through real-time subscription
+    // Real-time subscription will update userBookings automatically
   };
 
   const activeBookingsCount = userBookings.filter(b => b.status === 'confirmed').length;
 
+  // ================= DEDICATED FULL-PAGE ADMIN DASHBOARD =================
+  if (currentView === 'admin') {
+    return (
+      <AdminDashboard
+        onBackToStorefront={() => {
+          setCurrentView('storefront');
+          if (window.location.hash === '#admin') {
+            window.location.hash = '';
+          }
+        }}
+        services={allAdminServices.length > 0 ? allAdminServices : services}
+        practitioners={practitioners}
+        onServicesChanged={() => {}}
+      />
+    );
+  }
+
+  // ================= PUBLIC STOREFRONT =================
   return (
     <div className="min-h-screen bg-[#FAF7F2] text-[#2C2420] flex flex-col font-sans selection:bg-[#E8D8CE]">
       
@@ -87,6 +161,7 @@ function SalonAppContent() {
         onOpenAuth={() => setIsAuthOpen(true)}
         onOpenDashboard={() => setIsDashboardOpen(true)}
         onOpenStripeConfig={() => setIsStripeConfigOpen(true)}
+        onOpenAdmin={() => setCurrentView('admin')}
         activeSection={activeSection}
         setActiveSection={setActiveSection}
         bookingsCount={activeBookingsCount}
@@ -104,6 +179,8 @@ function SalonAppContent() {
 
         {/* Services & Treatment Catalog */}
         <ServiceCatalog
+          services={services}
+          isLoading={isServicesLoading}
           onSelectService={(service) => handleOpenBooking(service)}
           onViewServiceDetails={(service) => setServiceDetail(service)}
         />
@@ -113,6 +190,8 @@ function SalonAppContent() {
 
         {/* Practitioners Team */}
         <PractitionersSection
+          practitioners={practitioners}
+          isLoading={isPractitionersLoading}
           onSelectPractitioner={(practitionerName) => handleOpenBooking(undefined, practitionerName)}
         />
 
@@ -136,10 +215,13 @@ function SalonAppContent() {
       <BookingModal
         isOpen={isBookingOpen}
         onClose={() => setIsBookingOpen(false)}
+        services={services}
+        practitioners={practitioners}
         initialService={bookingServiceTarget}
         initialPractitioner={bookingPractitionerTarget}
         onBookingSuccess={handleBookingSuccess}
         onOpenDashboard={() => setIsDashboardOpen(true)}
+        onOpenAuthModal={() => setIsAuthOpen(true)}
       />
 
       <ServiceDetailModal

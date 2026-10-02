@@ -16,10 +16,29 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isAdmin() {
+    function isSuperAdmin() {
       return isSignedIn() && (
         request.auth.token.email == 'tahinaAndriantsoa2004@gmail.com' ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        request.auth.token.email == 'tahinaandriantsoa2004@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    function isPractitioner() {
+      return isSignedIn() && (
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'practitioner')
+      );
+    }
+
+    function isAdmin() {
+      return isSuperAdmin() || isPractitioner() || (
+        isSignedIn() && (
+          exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.admin == true ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true
+          ))
+        )
       );
     }
 
@@ -38,21 +57,42 @@ service cloud.firestore {
              data.email is string && data.email.size() <= 150 &&
              (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100)) &&
              (!('phone' in data) || (data.phone is string && data.phone.size() <= 25)) &&
+             (!('admin' in data) || data.admin is bool) &&
+             (!('isAdmin' in data) || data.isAdmin is bool) &&
+             (!('isPractitioner' in data) || data.isPractitioner is bool) &&
+             (!('role' in data) || (data.role in ['client', 'practitioner', 'admin'])) &&
+             (!('specialties' in data) || data.specialties is list) &&
+             (!('bio' in data) || (data.bio is string && data.bio.size() <= 500)) &&
+             (!('emailVerified' in data) || data.emailVerified is bool) &&
              (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 40)) &&
              (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 40));
     }
 
+    function isValidService(data) {
+      return data.keys().hasAll(['title', 'category', 'durationMinutes', 'price', 'description']) &&
+             data.title is string && data.title.size() <= 120 &&
+             data.category is string && data.category.size() <= 50 &&
+             data.durationMinutes is number && data.durationMinutes > 0 &&
+             data.price is number && data.price >= 0 &&
+             data.description is string && data.description.size() <= 1500 &&
+             (!('subtitle' in data) || (data.subtitle is string && data.subtitle.size() <= 200)) &&
+             (!('categoryName' in data) || (data.categoryName is string && data.categoryName.size() <= 80)) &&
+             (!('recommendedFor' in data) || (data.recommendedFor is string && data.recommendedFor.size() <= 400)) &&
+             (!('badge' in data) || (data.badge is string && data.badge.size() <= 50)) &&
+             (!('image' in data) || (data.image is string && data.image.size() <= 600)) &&
+             (!('active' in data) || data.active is bool);
+    }
+
     function isValidBooking(data) {
-      return data.keys().hasAll(['userId', 'customerName', 'serviceId', 'serviceTitle', 'price', 'date', 'timeSlot', 'status', 'paymentStatus']) &&
+      return data.keys().hasAll(['userId', 'customerName', 'serviceId', 'serviceTitle', 'price', 'date', 'timeSlot', 'status']) &&
              data.userId is string && data.userId.size() <= 128 &&
              data.customerName is string && data.customerName.size() <= 100 &&
-             data.serviceId is string && data.serviceId.size() <= 50 &&
-             data.serviceTitle is string && data.serviceTitle.size() <= 100 &&
+             data.serviceId is string && data.serviceId.size() <= 60 &&
+             data.serviceTitle is string && data.serviceTitle.size() <= 120 &&
              data.price is number && data.price >= 0 &&
              data.date is string && data.date.size() <= 20 &&
              data.timeSlot is string && data.timeSlot.size() <= 20 &&
              data.status in ['confirmed', 'cancelled', 'completed'] &&
-             data.paymentStatus in ['paid', 'refunded', 'pending'] &&
              (!('durationMinutes' in data) || (data.durationMinutes is number && data.durationMinutes > 0)) &&
              (!('serviceCategory' in data) || (data.serviceCategory is string && data.serviceCategory.size() <= 80)) &&
              (!('customerEmail' in data) || (data.customerEmail is string && data.customerEmail.size() <= 150)) &&
@@ -60,8 +100,8 @@ service cloud.firestore {
              (!('practitioner' in data) || (data.practitioner is string && data.practitioner.size() <= 80)) &&
              (!('notes' in data) || (data.notes is string && data.notes.size() <= 500)) &&
              (!('cancellationReason' in data) || (data.cancellationReason is string && data.cancellationReason.size() <= 250)) &&
+             (!('paymentStatus' in data) || (data.paymentStatus is string && data.paymentStatus.size() <= 50)) &&
              (!('paymentMethod' in data) || (data.paymentMethod is string && data.paymentMethod.size() <= 50)) &&
-             (!('paymentTransactionId' in data) || (data.paymentTransactionId is string && data.paymentTransactionId.size() <= 100)) &&
              (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 40)) &&
              (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 40));
     }
@@ -78,27 +118,38 @@ service cloud.firestore {
 
     // Users collection
     match /users/{userId} {
-      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
-      allow list: if isAdmin();
-      allow create: if isSignedIn() && request.auth.uid == userId && incoming().userId == userId && isValidUser(incoming());
-      allow update: if isSignedIn() && request.auth.uid == userId && incoming().userId == userId && isValidUser(incoming()) &&
-                    incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'phone', 'email', 'updatedAt']);
-      allow delete: if isAdmin();
+      allow get: if (resource.data.role == 'practitioner') || (isSignedIn() && (request.auth.uid == userId || isAdmin()));
+      allow list: if isAdmin() || (resource.data.role == 'practitioner');
+      allow create: if isSignedIn() && request.auth.uid == userId && isValidUser(incoming()) && (
+        ((!('admin' in incoming()) || incoming().admin == false) &&
+         (!('isAdmin' in incoming()) || incoming().isAdmin == false) &&
+         (!('role' in incoming()) || incoming().role == 'client')) ||
+        isSuperAdmin()
+      );
+      allow update: if isSignedIn() && (
+        (request.auth.uid == userId && isValidUser(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'phone', 'email', 'emailVerified', 'updatedAt'])) ||
+        isSuperAdmin()
+      );
+      allow delete: if isSuperAdmin();
+    }
+
+    // Services collection (Publicly readable, admin manageable)
+    match /services/{serviceId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin() && (request.method == 'delete' || isValidService(incoming()));
     }
 
     // Bookings collection
     match /bookings/{bookingId} {
       allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (
-        isAdmin() || (resource.data.userId == request.auth.uid)
-      );
+      allow list: if isSignedIn() && (isAdmin() || (resource.data.userId == request.auth.uid));
       allow create: if isSignedIn() && incoming().userId == request.auth.uid && isValidBooking(incoming());
-      allow update: if isSignedIn() && isValidBooking(incoming()) && (
+      allow update: if isSignedIn() && (
         isAdmin() ||
         (existing().userId == request.auth.uid && incoming().userId == existing().userId && (
-          // Action: Cancel Booking
+          // Client Action: Cancel Booking
           (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'cancellationReason', 'updatedAt']) && incoming().status == 'cancelled') ||
-          // Action: Reschedule / modify notes
+          // Client Action: Reschedule / modify notes
           (incoming().diff(existing()).affectedKeys().hasOnly(['date', 'timeSlot', 'notes', 'updatedAt']) && existing().status == 'confirmed')
         ))
       );

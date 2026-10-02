@@ -28,13 +28,13 @@ function saveLocalBookings(bookings: Booking[]) {
   try {
     localStorage.setItem(LOCAL_STORAGE_BOOKINGS_KEY, JSON.stringify(bookings));
   } catch (e) {
-    console.error('Failed to save to localStorage', e);
+    console.warn('Failed to save to localStorage', e);
   }
 }
 
 export const BookingService = {
   /**
-   * Create a new booking
+   * Create a new booking (requires logged in & verified email)
    */
   async createBooking(bookingData: Omit<Booking, 'id' | 'createdAt' | 'updatedAt'>): Promise<Booking> {
     const bookingId = 'bk_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6);
@@ -43,32 +43,32 @@ export const BookingService = {
     const newBooking: Booking = {
       ...bookingData,
       id: bookingId,
+      status: 'confirmed',
+      paymentStatus: 'on_site',
       createdAt: now,
       updatedAt: now,
     };
 
-    // If real Firebase Auth user is present, write directly to Firestore
+    // If authenticated in Firebase, write to Firestore
     if (auth.currentUser) {
       try {
         const bookingRef = doc(db, 'bookings', bookingId);
         await setDoc(bookingRef, {
           userId: newBooking.userId,
           customerName: newBooking.customerName,
-          customerEmail: newBooking.customerEmail || '',
+          customerEmail: newBooking.customerEmail || auth.currentUser.email || '',
           customerPhone: newBooking.customerPhone || '',
           serviceId: newBooking.serviceId,
           serviceTitle: newBooking.serviceTitle,
           serviceCategory: newBooking.serviceCategory,
-          durationMinutes: newBooking.durationMinutes,
-          price: newBooking.price,
+          durationMinutes: Number(newBooking.durationMinutes),
+          price: Number(newBooking.price),
           date: newBooking.date,
           timeSlot: newBooking.timeSlot,
           practitioner: newBooking.practitioner,
           notes: newBooking.notes || '',
           status: newBooking.status,
-          paymentStatus: newBooking.paymentStatus,
-          paymentMethod: newBooking.paymentMethod,
-          paymentTransactionId: newBooking.paymentTransactionId,
+          paymentStatus: 'on_site',
           createdAt: newBooking.createdAt,
           updatedAt: newBooking.updatedAt,
         });
@@ -77,7 +77,7 @@ export const BookingService = {
       }
     }
 
-    // Always mirror to local storage for instant offline availability & demo testing
+    // Always mirror to local storage
     const existing = getLocalBookings();
     saveLocalBookings([newBooking, ...existing]);
 
@@ -85,14 +85,13 @@ export const BookingService = {
   },
 
   /**
-   * Listen to bookings for a user (real-time via Firestore when authenticated)
+   * Listen to bookings for a specific client
    */
   subscribeUserBookings(
     userId: string, 
     onUpdate: (bookings: Booking[]) => void,
     onError?: (err: Error) => void
   ): Unsubscribe {
-    // If authenticated in Firebase, listen to Firestore query
     if (auth.currentUser && auth.currentUser.uid === userId) {
       const bookingsRef = collection(db, 'bookings');
       const q = query(
@@ -130,23 +129,87 @@ export const BookingService = {
               updatedAt: data.updatedAt,
             });
           });
-          // Sort by date desc
           list.sort((a, b) => new Date(b.date + 'T' + b.timeSlot).getTime() - new Date(a.date + 'T' + a.timeSlot).getTime());
           onUpdate(list);
         },
         (error) => {
-          console.error('Snapshot error for bookings:', error);
+          console.warn('User bookings snapshot:', error);
           if (onError) onError(error);
-          handleFirestoreError(error, OperationType.GET, 'bookings');
+          const local = getLocalBookings().filter(b => b.userId === userId);
+          onUpdate(local);
         }
       );
 
       return unsubscribe;
     }
 
-    // Fallback for demo accounts or non-Google user
+    // Fallback for demo accounts
     const emitLocal = () => {
       const local = getLocalBookings().filter(b => b.userId === userId);
+      local.sort((a, b) => new Date(b.date + 'T' + b.timeSlot).getTime() - new Date(a.date + 'T' + a.timeSlot).getTime());
+      onUpdate(local);
+    };
+
+    emitLocal();
+    const interval = setInterval(emitLocal, 1500);
+    return () => clearInterval(interval);
+  },
+
+  /**
+   * Listen to ALL salon bookings (Admin / Practitioners page)
+   */
+  subscribeAllBookings(
+    onUpdate: (bookings: Booking[]) => void,
+    onError?: (err: Error) => void
+  ): Unsubscribe {
+    if (auth.currentUser) {
+      const bookingsRef = collection(db, 'bookings');
+      const unsubscribe = onSnapshot(
+        bookingsRef,
+        (snapshot) => {
+          const list: Booking[] = [];
+          snapshot.forEach((d) => {
+            const data = d.data();
+            list.push({
+              id: d.id,
+              userId: data.userId,
+              customerName: data.customerName,
+              customerEmail: data.customerEmail,
+              customerPhone: data.customerPhone,
+              serviceId: data.serviceId,
+              serviceTitle: data.serviceTitle,
+              serviceCategory: data.serviceCategory,
+              durationMinutes: data.durationMinutes,
+              price: data.price,
+              date: data.date,
+              timeSlot: data.timeSlot,
+              practitioner: data.practitioner,
+              notes: data.notes,
+              status: data.status,
+              cancellationReason: data.cancellationReason,
+              paymentStatus: data.paymentStatus,
+              paymentMethod: data.paymentMethod,
+              paymentTransactionId: data.paymentTransactionId,
+              createdAt: data.createdAt,
+              updatedAt: data.updatedAt,
+            });
+          });
+          list.sort((a, b) => new Date(b.date + 'T' + b.timeSlot).getTime() - new Date(a.date + 'T' + a.timeSlot).getTime());
+          onUpdate(list);
+        },
+        (error) => {
+          console.warn('All bookings snapshot error (using local cache):', error);
+          if (onError) onError(error);
+          const local = getLocalBookings();
+          local.sort((a, b) => new Date(b.date + 'T' + b.timeSlot).getTime() - new Date(a.date + 'T' + a.timeSlot).getTime());
+          onUpdate(local);
+        }
+      );
+      return unsubscribe;
+    }
+
+    const emitLocal = () => {
+      const local = getLocalBookings();
       local.sort((a, b) => new Date(b.date + 'T' + b.timeSlot).getTime() - new Date(a.date + 'T' + a.timeSlot).getTime());
       onUpdate(local);
     };
@@ -175,7 +238,6 @@ export const BookingService = {
       }
     }
 
-    // Update local cache
     const current = getLocalBookings();
     const updated = current.map(b => {
       if (b.id === bookingId) {
@@ -183,8 +245,44 @@ export const BookingService = {
           ...b,
           status: 'cancelled' as const,
           cancellationReason: reason.trim() || 'Annulé par le client',
-          updatedAt: now,
-          paymentStatus: 'refunded' as const // Salon policy: automatic refund/voucher
+          updatedAt: now
+        };
+      }
+      return b;
+    });
+    saveLocalBookings(updated);
+  },
+
+  /**
+   * Admin updates booking status ('confirmed' | 'completed' | 'cancelled')
+   */
+  async updateBookingStatus(bookingId: string, status: 'confirmed' | 'completed' | 'cancelled', cancellationReason?: string): Promise<void> {
+    const now = new Date().toISOString();
+
+    if (auth.currentUser) {
+      try {
+        const bookingRef = doc(db, 'bookings', bookingId);
+        const payload: Record<string, any> = {
+          status,
+          updatedAt: now
+        };
+        if (cancellationReason) {
+          payload.cancellationReason = cancellationReason;
+        }
+        await updateDoc(bookingRef, payload);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `bookings/${bookingId}`);
+      }
+    }
+
+    const current = getLocalBookings();
+    const updated = current.map(b => {
+      if (b.id === bookingId) {
+        return {
+          ...b,
+          status,
+          cancellationReason: cancellationReason || b.cancellationReason,
+          updatedAt: now
         };
       }
       return b;

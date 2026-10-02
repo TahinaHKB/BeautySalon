@@ -2,7 +2,7 @@
   "entities": {
     "User": {
       "title": "User",
-      "description": "Customer profile for booking appointments at Un Moment pour Soi",
+      "description": "Customer and administrator profiles for Un Moment pour Soi",
       "type": "object",
       "properties": {
         "userId": {
@@ -12,17 +12,30 @@
         "email": {
           "type": "string",
           "format": "email",
-          "description": "Email address of the customer"
+          "description": "Email address of the user"
         },
         "displayName": {
           "type": "string",
           "maxLength": 100,
-          "description": "Full name of customer"
+          "description": "Full name of the user"
         },
         "phone": {
           "type": "string",
           "maxLength": 25,
           "description": "Contact phone number"
+        },
+        "isAdmin": {
+          "type": "boolean",
+          "description": "Whether the user is an admin / practitioner"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "client"],
+          "description": "Access role"
+        },
+        "emailVerified": {
+          "type": "boolean",
+          "description": "Whether the email was verified via sendEmailVerification"
         },
         "createdAt": {
           "type": "string",
@@ -31,9 +44,85 @@
       },
       "required": ["userId", "email"]
     },
+    "Service": {
+      "title": "Service",
+      "description": "Beauty treatment or ritual offered by the salon, managed by administrators",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique slug or ID of the service"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Title of the service"
+        },
+        "subtitle": {
+          "type": "string",
+          "maxLength": 150,
+          "description": "Short catchphrase"
+        },
+        "category": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Category identifier"
+        },
+        "categoryName": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "Human-readable category label"
+        },
+        "durationMinutes": {
+          "type": "number",
+          "description": "Duration in minutes"
+        },
+        "price": {
+          "type": "number",
+          "description": "Price in Euros"
+        },
+        "originalPrice": {
+          "type": "number",
+          "description": "Original price if on promotion"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "Detailed treatment description"
+        },
+        "recommendedFor": {
+          "type": "string",
+          "maxLength": 300,
+          "description": "Skin or body indication"
+        },
+        "badge": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Promotional badge"
+        },
+        "image": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Cover image URL"
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether offer is published on website"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Last update timestamp"
+        }
+      },
+      "required": ["title", "category", "durationMinutes", "price", "description"]
+    },
     "Booking": {
       "title": "Booking",
-      "description": "Appointment booking and payment record for a beauty treatment",
+      "description": "Appointment booking for a beauty treatment",
       "type": "object",
       "properties": {
         "userId": {
@@ -48,7 +137,7 @@
         "customerEmail": {
           "type": "string",
           "format": "email",
-          "description": "Client email for confirmation"
+          "description": "Client email"
         },
         "customerPhone": {
           "type": "string",
@@ -106,22 +195,7 @@
         "cancellationReason": {
           "type": "string",
           "maxLength": 250,
-          "description": "Reason given if cancelled by customer"
-        },
-        "paymentStatus": {
-          "type": "string",
-          "enum": ["paid", "refunded", "pending"],
-          "description": "Payment status"
-        },
-        "paymentMethod": {
-          "type": "string",
-          "maxLength": 50,
-          "description": "Payment method used (simulated, stripe, in_salon)"
-        },
-        "paymentTransactionId": {
-          "type": "string",
-          "maxLength": 100,
-          "description": "Transaction reference"
+          "description": "Reason given if cancelled"
         },
         "createdAt": {
           "type": "string",
@@ -132,7 +206,7 @@
           "description": "Last update timestamp"
         }
       },
-      "required": ["userId", "customerName", "serviceId", "serviceTitle", "price", "date", "timeSlot", "status", "paymentStatus"]
+      "required": ["userId", "customerName", "serviceId", "serviceTitle", "price", "date", "timeSlot", "status"]
     },
     "Review": {
       "title": "Review",
@@ -173,15 +247,19 @@
   "firestore": {
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/User" },
-      "description": "Customer profiles, accessible only by the owner or admin"
+      "description": "Customer and practitioner profiles"
+    },
+    "/services/{serviceId}": {
+      "schema": { "$ref": "#/entities/Service" },
+      "description": "Catalog of salon treatments and offerings, manageable by admins"
     },
     "/bookings/{bookingId}": {
       "schema": { "$ref": "#/entities/Booking" },
-      "description": "Bookings created and managed by customers"
+      "description": "Client bookings, accessible to the client and admins"
     },
     "/reviews/{reviewId}": {
       "schema": { "$ref": "#/entities/Review" },
-      "description": "Verified client testimonials and reviews"
+      "description": "Client reviews and testimonials"
     }
   }
 }

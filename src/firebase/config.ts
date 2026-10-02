@@ -3,11 +3,13 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-// Initialize Firebase
+// Initialize Firebase with the provided configuration
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
-// CRITICAL: The app will break without this line specifying databaseId
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db = (firebaseConfig as any).firestoreDatabaseId 
+  ? getFirestore(app, (firebaseConfig as any).firestoreDatabaseId)
+  : getFirestore(app);
+
 export const auth = getAuth(app);
 
 export enum OperationType {
@@ -57,7 +59,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Validate connection on boot as mandated
+// Validate connection on boot
 export async function testConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
